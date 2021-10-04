@@ -44,7 +44,7 @@ int main(int argc, char * argv[])
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0) {
 	    perror("socket()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } 
 
 
@@ -64,7 +64,7 @@ int main(int argc, char * argv[])
     int status = connect(sockfd, (struct sockaddr *) &servAddr, sizeof(servAddr));
     if(status < 0) {
 	    perror("connect()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     }
 
 
@@ -76,7 +76,7 @@ int main(int argc, char * argv[])
     status = recv(sockfd, buffer, sizeof(buffer), 0); 
     if(status < 0) {
 	    perror("recv()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } 
     printf("%s", buffer);
 
@@ -87,7 +87,7 @@ int main(int argc, char * argv[])
     status = send(sockfd, "OK\n", 3, 0);
     if(status < 0) {
 	    perror("send()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } 
 
 
@@ -98,7 +98,7 @@ int main(int argc, char * argv[])
     status = recv(sockfd, buffer, sizeof(buffer), 0);
     if(status < 0) {
 	    perror("recv()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } 
 
     char type;
@@ -138,7 +138,7 @@ int main(int argc, char * argv[])
     status = send(sockfd, buffer, sizeof(buffer), 0);
     if(status < 0) {
 	    perror("send()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } 
 
 
@@ -149,7 +149,7 @@ int main(int argc, char * argv[])
     status = recv(sockfd, buffer, sizeof(buffer), 0);
     if(status < 0) {
 	    perror("recv()");
-        exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } 
     printf("%s", buffer);
 

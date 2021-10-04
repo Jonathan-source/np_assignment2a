@@ -1,21 +1,21 @@
 #include <stdlib.h>
 #include <stdio.h>  
-#include <cstring>     
+#include <cstring> 
+#include <math.h>
+#include <errno.h>
 #include <arpa/inet.h>  
 #include <sys/types.h> 		
 #include <sys/socket.h>	
 #include <unistd.h>	 
 #include <netinet/in.h>	
-#include <signal.h>
 #include <sys/time.h>
-#include <math.h>
 
 // Included to get the support library
 #include <calcLib.h>
 
 #define BUFFER_SIZE 256
-#define MAX_CLIENTS 5
 #define SERVER_BACKLOG 5
+#define SUCCESS 0 
 
 typedef struct client {
   struct sockaddr_in addr;
@@ -83,10 +83,20 @@ int main(int argc, char * argv[])
 
 
     /*
+    * Reuse socket address.
+    */
+    int enable = 1;    
+    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char*)&enable, sizeof(enable)) != SUCCESS){
+        perror("setsockopt()");
+        exit(EXIT_FAILURE);
+    }  
+
+
+    /*
     * Bind: bind socket.
     */
     int status = bind(sockfd, (struct sockaddr * ) &servAddr, sizeof(servAddr));
-    if(status < 0) {
+    if(status < 0){
 	    perror("bind()");
         exit(EXIT_FAILURE);
     }
@@ -96,11 +106,20 @@ int main(int argc, char * argv[])
     * Listen: listen for connections...
     */
     status = listen(sockfd, SERVER_BACKLOG);
-    if(status < 0) {
+    if(status < 0){
 	    perror("listen()");
         exit(EXIT_FAILURE);
     }
+    printf("Listening for connections...\n");
 
+    // Initialize timeout.
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv)) != SUCCESS){
+        perror("setsockopt()");
+        exit(EXIT_FAILURE);
+    } 
 
     // Initialize libs.
     initCalcLib(); 
@@ -108,6 +127,7 @@ int main(int argc, char * argv[])
 
     client_t client;
     socklen_t clientLen = sizeof(client.addr);
+
 
     /*
     * Main loop: handle connections...
@@ -118,23 +138,40 @@ int main(int argc, char * argv[])
 
         // Accept connection.
         client.connfd = accept(sockfd, (struct sockaddr *) &client.addr, &clientLen);
-        if(client.connfd < 0) {
-            perror("accept()");
+        if(client.connfd <= 0) 
+        {
+            if(errno == EAGAIN)
+                continue;      
+            else
+                perror("accept()");
         }
         else
-        {   
-            // Handle connection.
-            if(!handle_connection(&client))
+        {     
+            // Handle new connection.
+            status = handle_connection(&client);
+            if(status == SUCCESS)
             {
-                // Handle assignment.
+                // Generate, send and confirm assignment.
                 generate_assignment(&client);
-                if(!send_assignment(&client))
-                    confirm_result(&client);
+                status = send_assignment(&client);
+                if(status == SUCCESS){
+                    status = confirm_result(&client);
+                }
             }
+
+            // Some error or connection timeout occured.
+            // Notify client and move on.
+            if(status != SUCCESS){
+                printf("[INFO]: client connection timeout, client notified.\n\n");
+                send(client.connfd, "ERROR TO\n", sizeof("ERROR TO\n"), 0); 
+            }
+
+            // Close connection with client.
+            close(client.connfd);
         }
 
-    } // End of loop.
 
+    } // end of loop.
 
 
     /*
@@ -156,9 +193,9 @@ int handle_connection(client_t * client)
 {   
     // Send protocol.	
     int status = send(client->connfd, "TEXT TCP 1.0\n\n", sizeof("TEXT TCP 1.0\n\n"), 0);
-    if(status < 0)
-        return EXIT_FAILURE;
-	
+    if(status <= 0){
+        return -1;
+	}
     printf("Client %s:%d connected, waiting for confirmation...\n", inet_ntoa(client->addr.sin_addr), client->addr.sin_port);
 
     char buffer[BUFFER_SIZE];
@@ -166,13 +203,13 @@ int handle_connection(client_t * client)
 
     // Recieve ACK from client.
 	status = recv(client->connfd, buffer, sizeof(buffer), 0); 
-    if(status < 0)
-        return EXIT_FAILURE;
-
+    if(status <= 0){
+        return -1;
+    }
 	printf("%s", buffer);    
 
     // Everything is OK.
-    return EXIT_SUCCESS;
+    return 0;
 }
 
 
@@ -199,7 +236,7 @@ void generate_assignment(client_t * client)
 
 
 /*
-* Method for sending given assignment.
+* Method for sending given assignment to client.
 */
 int send_assignment(client_t * client)
 {
@@ -212,15 +249,16 @@ int send_assignment(client_t * client)
         sprintf(buffer, "%s %i %i\n", client->op, client->ival1, client->ival2);
 
     int status = send(client->connfd, buffer, strlen(buffer), 0);
-    if(status < 0)
-        return EXIT_FAILURE;
-	    
-    return EXIT_SUCCESS;
+    if(status <= 0){
+        return -1;
+    }
+
+    return 0;
 }
 
 
 /*
-* Method for confirming result from given assignment.
+* Method for confirming the results given by the client.
 */
 int confirm_result(client_t * client)
 {
@@ -228,9 +266,9 @@ int confirm_result(client_t * client)
     memset(&buffer, 0, sizeof(buffer));
 
     int status = recv(client->connfd, buffer, sizeof(buffer), 0);
-    if(status < 0)
-        return EXIT_FAILURE;
-	
+    if(status <= 0){
+        return -1;
+    }
     printf("%s\n", buffer); 
 
     if(client->op[0] == 'f')
@@ -256,16 +294,17 @@ int confirm_result(client_t * client)
     }
 
     status = send(client->connfd, buffer, strlen(buffer), 0);
-    if(status < 0)
-        return EXIT_FAILURE;
+    if(status <= 0){
+        return -1;
+    }
 
     // Everything OK.
-    return EXIT_SUCCESS;
+    return 0;
 }
 
 
 /*
-* Method for calculating result (int).
+* Method for calculating results (int).
 */
 int calculate_iresult(char * op, int ival1, int ival2)
 {
@@ -291,7 +330,7 @@ int calculate_iresult(char * op, int ival1, int ival2)
 
 
 /*
-* Method for calculating result (float).
+* Method for calculating results (float).
 */
 float calculate_fresult(char * op, float fval1, float fval2)
 {
